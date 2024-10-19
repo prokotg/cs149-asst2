@@ -1,4 +1,6 @@
 #include "tasksys.h"
+#include <mutex>
+#include <thread>
 
 
 IRunnable::~IRunnable() {}
@@ -55,21 +57,45 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    this->num_threads = num_threads;
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
 
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
-
+    int task_queued = 0;
+    std::mutex m;
 
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
+    auto streaming = [&]() {
+        while(task_queued != num_total_tasks){
+            m.lock();
+            if (task_queued != num_total_tasks){
+                int my_task = task_queued;
+                task_queued++;
+                m.unlock();
+                runnable->runTask(my_task, num_total_tasks);
+            }
+            else {
+                m.unlock();
+                break;
+            }
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+        }
+    };
+
+    std::thread pool[num_threads];
+
+    for (int i = 0; i < this->num_threads; i++) {
+        pool[i] =  std::thread(streaming);
+    }
+
+    for (int i = 0; i < this->num_threads; i++) {
+        pool[i].join();
     }
 }
 
