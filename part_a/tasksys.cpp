@@ -134,17 +134,25 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 }
 
-TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
+TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+    this->pool_active = false;
+    for (int i = 0; i < this->num_threads; i++) {
+            pool[i].join();
+    }
+
+
+}
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
     this->cur_runnable = runnable;
     task_queued = num_total_tasks;
     std::atomic<int> tasks_completed(0);
+    this->pool_active=true;
     if(!this->pool){
         // std::cout << "Running " << my_task << std::endl;
 
         auto streaming = [&]() {
-            while(true){
+            while(this->pool_active){
                 m.lock();
                 if (task_queued > 0 ){
 
