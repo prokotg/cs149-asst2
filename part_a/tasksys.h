@@ -80,6 +80,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
                                 const std::vector<TaskID>& deps);
         void sync();
         std::mutex m;
+        std::mutex runnable_m;
+
         int num_threads;
         std::condition_variable_any  task_available;
         std::condition_variable_any  runnable_completed;

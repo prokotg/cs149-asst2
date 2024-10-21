@@ -275,6 +275,9 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
                 else {
                     // m.unlock();
                     // std::unique_lock<std::mutex> lck(m);
+                    if(tasks_completed == num_total_tasks){
+                        runnable_completed.notify_all();
+                    }
                     task_available.wait(lck);
                 }
 
@@ -288,17 +291,18 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
             pool[i] =  std::thread(streaming);
         }
     }
-    // std::unique_lock<std::mutex> lk_c(m);
+    std::unique_lock<std::mutex> lk_c(runnable_m);
 
     task_available.notify_all();
+    runnable_completed.wait(lk_c);
 
     // m.unlock();
-    while(true){
-        // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
-        if(tasks_completed == num_total_tasks){
-            break;
-        }
-    }
+    // while(true){
+    //     // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
+    //     if(tasks_completed == num_total_tasks){
+    //         break;
+    //     }
+    // }
 
 }
 
