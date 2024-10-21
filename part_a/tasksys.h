@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+#include <atomic>
 /*
  * TaskSystemSerial: This class is the student's implementation of a
  * serial task execution engine.  See definition of ITaskSystem in
@@ -87,9 +88,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::condition_variable_any  runnable_completed;
         int task_queued = 0;
         int tasks_completed = 0;
-        IRunnable* cur_runnable;
         std::thread* pool = nullptr;
-        bool pool_active = false;
+        std::atomic_bool pool_active;
 };
 
 #endif

@@ -250,7 +250,6 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
-    this->cur_runnable = runnable;
     std::atomic<int> tasks_completed(0);
     this->pool_active=true;
     // std::cout << "fdsfds" << this->pool;
@@ -261,22 +260,19 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
             while(this->pool_active){
                 // std::cout << "meep "  << std::endl;
                 std::unique_lock<std::mutex> lck(m);
-                // m.lock();
                 if (task_queued > 0 ){
                     int my_task = num_total_tasks - task_queued;
                     // std::cout << "Running " << my_task << std::endl;
 
                     task_queued--;
                     lck.unlock();
-                    this->cur_runnable->runTask(my_task, num_total_tasks);
+                    runnable->runTask(my_task, num_total_tasks);
                     // std::cout << "Finished " << my_task << std::endl;
                     tasks_completed++;
                 }
                 else {
-                    // m.unlock();
-                    // std::unique_lock<std::mutex> lck(m);
                     if(tasks_completed == num_total_tasks){
-                        runnable_completed.notify_all();
+                        runnable_completed.notify_one();
                     }
                     task_available.wait(lck);
                 }
@@ -292,17 +288,18 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
         }
     }
     std::unique_lock<std::mutex> lk_c(runnable_m);
-
     task_available.notify_all();
-    runnable_completed.wait(lk_c);
+
 
     // m.unlock();
-    // while(true){
-    //     // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
-    //     if(tasks_completed == num_total_tasks){
-    //         break;
-    //     }
-    // }
+    while(true){
+        // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
+        if(tasks_completed == num_total_tasks){
+            break;
+        }
+        runnable_completed.wait(lk_c);
+
+    }
 
 }
 
