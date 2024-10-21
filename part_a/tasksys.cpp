@@ -233,8 +233,9 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //TODO!!! proper thread pool cleaning. Use is_pool_alive and ensure every thread released lock on mutex
 
     this->pool_active = false;
-    task_available.notify_all();
+
     for (int i = 0; i < this->num_threads; i++) {
+            task_available.notify_all();
             pool[i].join();
     }
 
