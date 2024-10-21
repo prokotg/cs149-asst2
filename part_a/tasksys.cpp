@@ -258,21 +258,21 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
         auto streaming = [&]() {
             while(this->pool_active){
                 // std::cout << "meep "  << std::endl;
-                // std::unique_lock<std::mutex> lck(m);
-                m.lock();
+                std::unique_lock<std::mutex> lck(m);
+                // m.lock();
                 if (task_queued > 0 ){
                     int my_task = num_total_tasks - task_queued;
                     // std::cout << "Running " << my_task << std::endl;
 
                     task_queued--;
-                    m.unlock();
+                    lck.unlock();
                     this->cur_runnable->runTask(my_task, num_total_tasks);
                     // std::cout << "Finished " << my_task << std::endl;
                     tasks_completed++;
                 }
                 else {
-                    m.unlock();
-                    std::unique_lock<std::mutex> lck(m);
+                    // m.unlock();
+                    // std::unique_lock<std::mutex> lck(m);
                     task_available.wait(lck);
                 }
 
