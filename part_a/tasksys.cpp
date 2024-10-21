@@ -4,6 +4,7 @@
 #include <ostream>
 #include <iostream>
 #include<atomic>
+#include <shared_mutex>
 IRunnable::~IRunnable() {}
 
 ITaskSystem::ITaskSystem(int num_threads) {}
@@ -217,6 +218,8 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    this->num_threads = num_threads;
+
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -228,6 +231,13 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //
 
     //TODO!!! proper thread pool cleaning. Use is_pool_alive and ensure every thread released lock on mutex
+
+    this->pool_active = false;
+    task_available.notify_all();
+    for (int i = 0; i < this->num_threads; i++) {
+            pool[i].join();
+    }
+
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
@@ -239,9 +249,55 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    this->cur_runnable = runnable;
+    std::atomic<int> tasks_completed(0);
+    this->pool_active=true;
+    // std::cout << "fdsfds" << this->pool;
+    if(!this->pool){
+
+        auto streaming = [&]() {
+            while(this->pool_active){
+                // std::cout << "meep "  << std::endl;
+                // std::unique_lock<std::mutex> lck(m);
+                m.lock();
+                if (task_queued > 0 ){
+                    int my_task = num_total_tasks - task_queued;
+                    // std::cout << "Running " << my_task << std::endl;
+
+                    task_queued--;
+                    m.unlock();
+                    this->cur_runnable->runTask(my_task, num_total_tasks);
+                    // std::cout << "Finished " << my_task << std::endl;
+                    tasks_completed++;
+                }
+                else {
+                    m.unlock();
+                    std::unique_lock<std::mutex> lck(m);
+                    task_available.wait(lck);
+                }
+
+            }
+        };
+        pool = new std::thread[num_threads];
+
+        for (int i = 0; i < this->num_threads; i++) {
+            // std::cout << "Starting " << i << std::endl;
+
+            pool[i] =  std::thread(streaming);
+        }
     }
+    // std::unique_lock<std::mutex> lk_c(m);
+    task_queued = num_total_tasks;
+
+    task_available.notify_all();
+    // m.unlock();
+    while(true){
+        // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
+        if(tasks_completed == num_total_tasks){
+            break;
+        }
+    }
+
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
