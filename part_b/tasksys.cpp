@@ -1,5 +1,5 @@
 #include "tasksys.h"
-
+#include <iostream>
 
 IRunnable::~IRunnable() {}
 
@@ -127,12 +127,9 @@ const char* TaskSystemParallelThreadPoolSleeping::name() {
 }
 
 TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int num_threads): ITaskSystem(num_threads) {
-    //
-    // TODO: CS149 student implementations may decide to perform setup
-    // operations (such as thread pool construction) here.
-    // Implementations are free to add new class member variables
-    // (requiring changes to tasksys.h).
-    //
+    this->pool_active=true;
+    this->num_threads = num_threads;
+
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -147,12 +144,6 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
 
 
-    //
-    // TODO: CS149 students will modify the implementation of this
-    // method in Parts A and B.  The implementation provided below runs all
-    // tasks sequentially on the calling thread.
-    //
-
     for (int i = 0; i < num_total_tasks; i++) {
         runnable->runTask(i, num_total_tasks);
     }
@@ -162,15 +153,83 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                                                     const std::vector<TaskID>& deps) {
 
 
-    //
-    // TODO: CS149 students will implement this method in Part B.
-    //
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
-    }
+    if(!this->pool){
+        auto streaming = [&](int threadId) {
+            while(true){
+                std::unique_lock<std::mutex> lck(m);
+                if(!this->pool_active){
+                    return;
+                }
 
-    return 0;
+                if (task_queued > 0 ){
+                    int my_task = num_total_tasks - task_queued;
+
+                    task_queued--;
+                    lck.unlock();
+                    runnable->runTask(my_task, num_total_tasks);
+                    tasks_completed++;
+                }
+                else {
+                    task_available.wait_for(lck, std::chrono::seconds(2) );
+                }
+
+            }
+        };
+
+        auto keeper = [&](){
+            while(true){
+                std::unique_lock<std::mutex> map_lock(map_mutex);
+
+                for (auto const& queued_task : dependency_map)
+                {
+                    TaskID queued_id = queued_task.first;
+                    QueuedTask* task = queued_task.second;
+                    if (task->queued){
+                        continue;
+                    }
+                    bool ready_to_be_queued = true;
+                    for(TaskID const& dep: task->deps){
+                        if (dependency_map.count(dep)){
+                            if(!dependency_map[dep]->finished){
+                                ready_to_be_queued = false;
+                                std::cout << "Task id " << queued_id  << " needs " << dep << " to be finished" << std::endl;
+
+                                break;
+                            }
+                        }
+                    }
+                    if(ready_to_be_queued){
+                        task->queued = true;
+                        runnable_queue.push(task);
+                        std::cout << "Task id " << queued_id  << " ready to be queued!" << std::endl;
+                    }
+
+            }
+            task_graph_changed.wait(map_lock);
+
+
+
+            }
+        };
+        pool = new std::thread[num_threads];
+        bookkeeper = new std::thread(keeper);
+
+        for (int i = 0; i < this->num_threads; i++) {
+            pool[i] =  std::thread(streaming, i);
+        }
+    };
+
+    std::unique_lock<std::mutex> map_lock(map_mutex);
+    TaskID registered_id = dependency_map.size();
+    QueuedTask* new_record = new QueuedTask;
+    new_record->runnable = runnable;
+    new_record->num_total_tasks = num_total_tasks;
+    new_record->deps = deps;
+    dependency_map[registered_id] = new_record;
+    task_graph_changed.notify_one();
+    return registered_id;
+
 }
 
 void TaskSystemParallelThreadPoolSleeping::sync() {
