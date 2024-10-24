@@ -171,7 +171,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                 while(runnable_queue.empty() && this->pool_active){
                     task_available.wait(lck);
                 }
-                std::cout << "Thread " << threadId << "active" << std::endl;
+                // std::cout << "Thread " << threadId << "active" << std::endl;
 
                 if(!this->pool_active){
                     return;
@@ -179,13 +179,13 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                 RunnableTask * front_task = runnable_queue.front();
                 runnable_queue.pop();
                 lck.unlock();
-                std::cout << "Thread " << threadId << "Running runnable " << front_task->registered_id << " task " << front_task->task_id << std::endl;
+                // std::cout << "Thread " << threadId << "Running runnable " << front_task->registered_id << " task " << front_task->task_id << std::endl;
                 front_task->runnable->runTask(front_task->task_id, front_task->num_total_tasks);
-
-                dependency_map[front_task->registered_id]->m.lock();
+                auto dd = dependency_map[front_task->registered_id];
+                std::unique_lock<std::mutex> lock(dependency_map[front_task->registered_id]->m);
                 dependency_map[front_task->registered_id]->completed_tasks++;
                 if(dependency_map[front_task->registered_id]->completed_tasks == dependency_map[front_task->registered_id]->num_total_tasks){
-                    std::cout << "Thread " << threadId << " mark runnable  " << front_task->registered_id << " complete with task " << front_task->task_id << std::endl;
+                    // std::cout << "Thread " << threadId << " mark runnable  " << front_task->registered_id << " complete with task " << front_task->task_id << std::endl;
 
                     dependency_map[front_task->registered_id]->finished=true;
                     endm.lock();
@@ -194,7 +194,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                     task_graph_changed.notify_all(); //??
 
                 }
-                dependency_map[front_task->registered_id]->m.unlock();
+                lock.unlock();
 
                 }
 
@@ -219,14 +219,14 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                     bool ready_to_be_queued = true;
                     for(TaskID const& dep: task->deps){
                             if(!dependency_map[dep]->finished){
-                                std::cout << "Task id "  << task->registered_id << " need dependency " << dep << std::endl;
+                                // std::cout << "Task id "  << task->registered_id << " need dependency " << dep << std::endl;
 
                                 ready_to_be_queued = false;
                                 break;
                             }
                     }
                     if(ready_to_be_queued){
-                        std::cout << "Runnable id "  << task->registered_id << " ready to be queued!" << std::endl;
+                        // std::cout << "Runnable id "  << task->registered_id << " ready to be queued!" << std::endl;
                         task->queued = true;
                         queue_mutex.lock();
                         for(int i = 0; i < task->num_total_tasks; ++i ){
@@ -277,10 +277,10 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 void TaskSystemParallelThreadPoolSleeping::sync() {
     std::unique_lock<std::mutex> lock(endm);
     while(completed_runnables!=queued_runnables){
-        std::cout << "Cannot sync. Waiting size: " << waiting_queue.size() << " Runnable queue: " << runnable_queue.size() <<  std::endl;
-        std::cout << "Completed " << completed_runnables << " Queued " << queued_runnables << std::endl;
+        // std::cout << "Cannot sync. Waiting size: " << waiting_queue.size() << " Runnable queue: " << runnable_queue.size() <<  std::endl;
+        // std::cout << "Completed " << completed_runnables << " Queued " << queued_runnables << std::endl;
         task_graph_changed.wait(lock);
     }
-    std::cout<< "Done!!!!" << std::endl;
+    // std::cout<< "Done!!!!" << std::endl;
 
 }
