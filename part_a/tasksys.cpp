@@ -5,6 +5,7 @@
 #include <iostream>
 #include<atomic>
 #include <shared_mutex>
+#include <chrono>
 IRunnable::~IRunnable() {}
 
 ITaskSystem::ITaskSystem(int num_threads) {}
@@ -231,13 +232,22 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //
 
     //TODO!!! proper thread pool cleaning. Use is_pool_alive and ensure every thread released lock on mutex
-
+    // std::cout << "Destructor called" << std::endl;
+    m.lock();
     this->pool_active = false;
+    m.unlock();
+    task_available.notify_all();
+
+    // std::cout << "Workers notified" << std::endl;
+
 
     for (int i = 0; i < this->num_threads; i++) {
-            task_available.notify_all();
             pool[i].join();
     }
+
+    // for (int i = 0; i < this->num_threads; i++) {
+    //         delete (pool +i);
+    // }
 
 }
 
@@ -256,17 +266,27 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     task_queued = num_total_tasks;
     if(!this->pool){
 
-        auto streaming = [&]() {
-            while(this->pool_active){
-                // std::cout << "meep "  << std::endl;
+        auto streaming = [&](int threadId) {
+            while(true){
                 std::unique_lock<std::mutex> lck(m);
+                if(!this->pool_active){
+                    return;
+                }
+                // std::cout << "threadId" << threadId << " Got lock " <<std::endl;
+
                 if (task_queued > 0 ){
                     int my_task = num_total_tasks - task_queued;
-                    // std::cout << "Running " << my_task << std::endl;
+                    // std::cout << "threadId" << threadId << " Running " << my_task << std::endl;
 
                     task_queued--;
+                    // std::cout << "threadId" << threadId << " task_queued is now " << task_queued <<std::endl;
+
+                    // std::cout << "threadId" << threadId << " Released lock " <<std::endl;
+
                     lck.unlock();
                     runnable->runTask(my_task, num_total_tasks);
+                    // std::cout << "threadId" << threadId << " Finished  " << my_task <<std::endl;
+
                     // std::cout << "Finished " << my_task << std::endl;
                     tasks_completed++;
                 }
@@ -274,17 +294,31 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
                     // if(tasks_completed == num_total_tasks){
                     //     runnable_completed.notify_one();
                     // }
-                    task_available.wait(lck);
+                    // std::cout << "threadId" << threadId << " No job. Sleeping " <<std::endl;
+                    // if(!this->pool_active){
+
+                    //     return;
+                    // }
+                    task_available.wait_for( lck, std::chrono::seconds(2) );
+
+                    // task_available.wait(lck, std::);
+                //         if(!this->pool_active){
+                //     return;
+                // }
+                    // std::cout << "Oi mate " << threadId << " has been awaken " <<std::endl;
+
                 }
 
             }
+            // std::cout << "Oi mate " << threadId << " sees pool inactive " <<std::endl;
+            return;
         };
         pool = new std::thread[num_threads];
 
         for (int i = 0; i < this->num_threads; i++) {
             // std::cout << "Starting " << i << std::endl;
 
-            pool[i] =  std::thread(streaming);
+            pool[i] =  std::thread(streaming, i);
         }
     }
     // std::unique_lock<std::mutex> lk_c(runnable_m);
@@ -295,7 +329,8 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     while(true){
         // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
         if(tasks_completed == num_total_tasks){
-            break;
+            // std::cout << "Done!" << std::endl;
+            return;
         }
         // runnable_completed.wait(lk_c);
 
