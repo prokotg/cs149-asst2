@@ -175,26 +175,18 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 
                     task_available.wait(lck);
                 }
-
                 if(!this->pool_active){
                     return;
                 }
-
-                QueuedTask* front_task = nullptr;
-                for(const auto& t : runnable_queue)
-                {
-                    if(t->tasks_queued){
-                        front_task = t;
-                    }
-                }
-                if(front_task == nullptr){
-                    continue;
-                }
+                QueuedTask * front_task = runnable_queue.front();
+                lck.unlock();
+                front_task->m.lock();
+                if(front_task->tasks_queued){
                 int my_task  = front_task->num_total_tasks - front_task->tasks_queued;
                 // std::cout << "Executing " << my_task  << std::endl;
 
                 front_task->tasks_queued--;
-                lck.unlock();
+                front_task->m.unlock();
 
                 front_task->runnable->runTask(my_task, front_task->num_total_tasks);
                 front_task->m.lock();
@@ -210,7 +202,23 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                 }
 
 
-            }
+                } else {
+                    front_task->m.unlock();
+                }
+                }
+
+
+                // QueuedTask* front_task = nullptr;
+                // for(const auto& t : runnable_queue)
+                // {
+                //     if(t->tasks_queued){
+                //         front_task = t;
+                //     }
+                // }
+                // if(front_task == nullptr){
+                //     continue;
+                // }
+
 
         };
 
