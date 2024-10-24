@@ -94,10 +94,12 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::thread* bookkeeper = nullptr;
         std::mutex waiting_mutex;
         std::mutex queue_mutex;
+        std::mutex endm;
         std::condition_variable  task_graph_changed;
         std::condition_variable  task_available;
         std::condition_variable task_with_dependencies;
-
+        std::atomic<int>completed_runnables;
+        std::atomic<int>queued_runnables;
         std::atomic_bool pool_active;
 
 
