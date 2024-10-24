@@ -8,7 +8,7 @@
 #include <thread>
 #include <condition_variable>
 #include <atomic>
-
+#include <list>
 struct QueuedTask {
     IRunnable* runnable;
     int num_total_tasks;
@@ -89,12 +89,14 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         int num_threads;
         std::unordered_map<int, QueuedTask*> dependency_map;
         std::queue<QueuedTask*> runnable_queue;
+        std::list<QueuedTask*> waiting_queue;
         std::thread* pool = nullptr;
         std::thread* bookkeeper = nullptr;
-        std::mutex map_mutex;
+        std::mutex waiting_mutex;
         std::mutex queue_mutex;
         std::condition_variable  task_graph_changed;
         std::condition_variable  task_available;
+        std::condition_variable task_with_dependencies;
 
         std::atomic_bool pool_active;
 
