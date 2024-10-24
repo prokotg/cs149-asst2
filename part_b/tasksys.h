@@ -88,7 +88,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         void sync();
         int num_threads;
         std::unordered_map<int, QueuedTask*> dependency_map;
-        std::queue<QueuedTask*> runnable_queue;
+        std::list<QueuedTask*> runnable_queue;
         std::list<QueuedTask*> waiting_queue;
         std::thread* pool = nullptr;
         std::thread* bookkeeper = nullptr;
