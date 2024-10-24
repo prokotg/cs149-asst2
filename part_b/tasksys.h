@@ -12,14 +12,20 @@
 struct QueuedTask {
     IRunnable* runnable;
     int num_total_tasks;
-    int tasks_queued;
     int completed_tasks = 0;
     std::vector<int> deps;
     std::mutex m;
     bool finished = false;
+    int registered_id;
     bool queued = false;
 };
 
+struct RunnableTask {
+    IRunnable* runnable;
+    int num_total_tasks;
+    int task_id;
+    int registered_id;
+};
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -88,7 +94,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         void sync();
         int num_threads;
         std::unordered_map<int, QueuedTask*> dependency_map;
-        std::list<QueuedTask*> runnable_queue;
+        std::queue<RunnableTask*> runnable_queue;
         std::list<QueuedTask*> waiting_queue;
         std::thread* pool = nullptr;
         std::thread* bookkeeper = nullptr;
