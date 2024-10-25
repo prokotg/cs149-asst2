@@ -178,7 +178,19 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                 if(!this->pool_active){
                     return;
                 }
-                QueuedTask * front_task = runnable_queue.front();
+
+                QueuedTask* front_task = nullptr;
+                for(const auto& t : runnable_queue)
+                {
+                    if(t->tasks_queued){
+                        front_task = t;
+                    }
+                }
+                if(front_task == nullptr){
+                    continue;
+                }
+
+                // QueuedTask * front_task = runnable_queue.front();
                 lck.unlock();
                 front_task->m.lock();
                 if(front_task->tasks_queued){
@@ -194,6 +206,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                 front_task->m.unlock();
 
                 if(front_task->completed_tasks == front_task->num_total_tasks){
+
                     lck.lock();
                     runnable_queue.remove(front_task);
                     lck.unlock();
@@ -208,16 +221,6 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                 }
 
 
-                // QueuedTask* front_task = nullptr;
-                // for(const auto& t : runnable_queue)
-                // {
-                //     if(t->tasks_queued){
-                //         front_task = t;
-                //     }
-                // }
-                // if(front_task == nullptr){
-                //     continue;
-                // }
 
 
         };
@@ -253,8 +256,9 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
                         task->queued = true;
                         queue_mutex.lock();
                         runnable_queue.push_back(task);
-                        task_available.notify_all(); // ???
                         queue_mutex.unlock();
+                        task_available.notify_all(); // ???
+
                     }
                 }
                 waiting_queue.remove_if([](QueuedTask* task){return task->queued;});
@@ -278,6 +282,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     new_record->deps = deps;
     dependency_map[registered_id] = new_record;
     waiting_queue.push_back(new_record);
+    waiting_lock.unlock();
     task_with_dependencies.notify_all();
     return registered_id;
 
@@ -287,7 +292,7 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     std::unique_lock<std::mutex> lock(queue_mutex);
     while(!(waiting_queue.empty() && runnable_queue.empty())){
         // std::cout << "Cannot sync. Waiting size: " << waiting_queue.size() << " Runnable queue: " << runnable_queue.size() <<  std::endl;
-        task_graph_changed.wait_for(lock, std::chrono::milliseconds(2) );
+        task_graph_changed.wait(lock );
     }
     // std::cout<< "Done!!!!" << std::endl;
 
