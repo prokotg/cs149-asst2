@@ -128,7 +128,15 @@ const char* TaskSystemParallelThreadPoolSleeping::name() {
 
 TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int num_threads): ITaskSystem(num_threads) {
     this->pool_active=true;
-    this->num_threads = num_threads;
+
+    if(!this->pool){
+        pool = new std::thread[num_threads];
+        bookkeeper = new std::thread(&TaskSystemParallelThreadPoolSleeping::keeper, this);
+
+        for (int i = 0; i < this->num_threads; i++) {
+            pool[i] =  std::thread(&TaskSystemParallelThreadPoolSleeping::worker, this, i);
+        }
+    };
 
 }
 
@@ -248,14 +256,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 
 
 
-    if(!this->pool){
-        pool = new std::thread[num_threads];
-        bookkeeper = new std::thread(&TaskSystemParallelThreadPoolSleeping::keeper, this);
 
-        for (int i = 0; i < this->num_threads; i++) {
-            pool[i] =  std::thread(&TaskSystemParallelThreadPoolSleeping::worker, this, i);
-        }
-    };
 
 
 
