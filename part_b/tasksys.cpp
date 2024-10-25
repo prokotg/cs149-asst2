@@ -159,8 +159,89 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
 }
 
 void TaskSystemParallelThreadPoolSleeping::worker(int threadId){
-    return;
+        while(true){
+        std::unique_lock<std::mutex> lck(queue_mutex);
+
+        while(runnable_queue.empty() && this->pool_active){
+            task_available.wait(lck);
+        }
+        // std::cout << "Thread " << threadId << "active" << std::endl;
+
+        if(!this->pool_active){
+            return;
+        }
+        RunnableTask * front_task = runnable_queue.front();
+        runnable_queue.pop();
+        lck.unlock();
+        // std::cout << "Thread " << threadId << "Running runnable " << front_task->registered_id << " task " << front_task->task_id << std::endl;
+        front_task->runnable->runTask(front_task->task_id, front_task->num_total_tasks);
+        auto dd = dependency_map[front_task->registered_id];
+        std::unique_lock<std::mutex> lock(dependency_map[front_task->registered_id]->m);
+        dependency_map[front_task->registered_id]->completed_tasks++;
+        if(dependency_map[front_task->registered_id]->completed_tasks == dependency_map[front_task->registered_id]->num_total_tasks){
+            // std::cout << "Thread " << threadId << " mark runnable  " << front_task->registered_id << " complete with task " << front_task->task_id << std::endl;
+
+            dependency_map[front_task->registered_id]->finished=true;
+            endm.lock();
+            completed_runnables++;
+            endm.unlock();
+            task_graph_changed.notify_all(); //??
+
+        }
+        lock.unlock();
+
+        }
 }
+
+void TaskSystemParallelThreadPoolSleeping::keeper(){
+        while(true){
+            std::unique_lock<std::mutex> waiting_lock(waiting_mutex);
+
+            while(waiting_queue.empty() && this->pool_active){
+                task_graph_changed.wait(waiting_lock);
+            }
+
+            if(!this->pool_active){
+                // std::cout << "Keeper out!" << std::endl;
+                return;
+            }
+
+            for (auto const& task : waiting_queue)
+            {
+                bool ready_to_be_queued = true;
+                for(TaskID const& dep: task->deps){
+                        if(!dependency_map[dep]->finished){
+                            // std::cout << "Task id "  << task->registered_id << " need dependency " << dep << std::endl;
+
+                            ready_to_be_queued = false;
+                            break;
+                        }
+                }
+                if(ready_to_be_queued){
+                    // std::cout << "Runnable id "  << task->registered_id << " ready to be queued!" << std::endl;
+                    task->queued = true;
+                    queue_mutex.lock();
+                    for(int i = 0; i < task->num_total_tasks; ++i ){
+                        RunnableTask* rt = new RunnableTask();
+                        rt->runnable = task->runnable;
+                        rt->num_total_tasks = task->num_total_tasks;
+                        rt->task_id=i;
+                        rt->registered_id=task->registered_id;
+                        runnable_queue.push(rt);
+
+                    }
+                    queue_mutex.unlock();
+                    task_available.notify_all(); // ???
+
+                }
+            }
+            waiting_queue.remove_if([](QueuedTask* task){return task->queued;});
+
+        }
+
+
+}
+
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                     const std::vector<TaskID>& deps) {
@@ -168,96 +249,16 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 
 
     if(!this->pool){
-        auto streaming = [&](int threadId) {
-            while(true){
-                std::unique_lock<std::mutex> lck(queue_mutex);
-
-                while(runnable_queue.empty() && this->pool_active){
-                    task_available.wait(lck);
-                }
-                // std::cout << "Thread " << threadId << "active" << std::endl;
-
-                if(!this->pool_active){
-                    return;
-                }
-                RunnableTask * front_task = runnable_queue.front();
-                runnable_queue.pop();
-                lck.unlock();
-                // std::cout << "Thread " << threadId << "Running runnable " << front_task->registered_id << " task " << front_task->task_id << std::endl;
-                front_task->runnable->runTask(front_task->task_id, front_task->num_total_tasks);
-                auto dd = dependency_map[front_task->registered_id];
-                std::unique_lock<std::mutex> lock(dependency_map[front_task->registered_id]->m);
-                dependency_map[front_task->registered_id]->completed_tasks++;
-                if(dependency_map[front_task->registered_id]->completed_tasks == dependency_map[front_task->registered_id]->num_total_tasks){
-                    // std::cout << "Thread " << threadId << " mark runnable  " << front_task->registered_id << " complete with task " << front_task->task_id << std::endl;
-
-                    dependency_map[front_task->registered_id]->finished=true;
-                    endm.lock();
-                    completed_runnables++;
-                    endm.unlock();
-                    task_graph_changed.notify_all(); //??
-
-                }
-                lock.unlock();
-
-                }
-
-
-        };
-
-        auto keeper = [&](){
-            while(true){
-                std::unique_lock<std::mutex> waiting_lock(waiting_mutex);
-
-                while(waiting_queue.empty() && this->pool_active){
-                    task_graph_changed.wait(waiting_lock);
-                }
-
-                if(!this->pool_active){
-                    // std::cout << "Keeper out!" << std::endl;
-                    return;
-                }
-
-                for (auto const& task : waiting_queue)
-                {
-                    bool ready_to_be_queued = true;
-                    for(TaskID const& dep: task->deps){
-                            if(!dependency_map[dep]->finished){
-                                // std::cout << "Task id "  << task->registered_id << " need dependency " << dep << std::endl;
-
-                                ready_to_be_queued = false;
-                                break;
-                            }
-                    }
-                    if(ready_to_be_queued){
-                        // std::cout << "Runnable id "  << task->registered_id << " ready to be queued!" << std::endl;
-                        task->queued = true;
-                        queue_mutex.lock();
-                        for(int i = 0; i < task->num_total_tasks; ++i ){
-                            RunnableTask* rt = new RunnableTask();
-                            rt->runnable = task->runnable;
-                            rt->num_total_tasks = task->num_total_tasks;
-                            rt->task_id=i;
-                            rt->registered_id=task->registered_id;
-                            runnable_queue.push(rt);
-
-                        }
-                        queue_mutex.unlock();
-                        task_available.notify_all(); // ???
-
-                    }
-                }
-                waiting_queue.remove_if([](QueuedTask* task){return task->queued;});
-
-            }
-        };
         pool = new std::thread[num_threads];
-        bookkeeper = new std::thread(keeper);
+        bookkeeper = new std::thread(&TaskSystemParallelThreadPoolSleeping::keeper, this);
 
         for (int i = 0; i < this->num_threads; i++) {
-            pool[i] =  std::thread(streaming, i);
+            pool[i] =  std::thread(&TaskSystemParallelThreadPoolSleeping::worker, this, i);
         }
     };
+
+
+
 
     TaskID registered_id = dependency_map.size();
     QueuedTask* new_record = new QueuedTask;

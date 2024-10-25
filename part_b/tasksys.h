@@ -92,6 +92,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void worker(int threadId);
+        void keeper();
         void sync();
         int num_threads;
         std::unordered_map<int, QueuedTask*> dependency_map;
