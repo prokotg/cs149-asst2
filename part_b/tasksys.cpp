@@ -158,6 +158,10 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     }
 }
 
+void TaskSystemParallelThreadPoolSleeping::worker(int threadId){
+    return;
+}
+
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                     const std::vector<TaskID>& deps) {
 
