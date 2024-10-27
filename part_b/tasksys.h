@@ -18,6 +18,14 @@ struct QueuedTask {
     std::mutex m;
     bool finished = false;
     bool queued = false;
+    int registered_id;
+};
+
+struct RunnableChunk {
+    IRunnable* runnable;
+    int num_total_tasks;
+    int task_id;
+    QueuedTask* bulk;
 };
 
 
@@ -86,9 +94,11 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+        void worker(int threadId);
+        void keeper();
         int num_threads;
         std::unordered_map<int, QueuedTask*> dependency_map;
-        std::list<QueuedTask*> runnable_queue;
+        std::queue<RunnableChunk*> runnable_queue;
         std::list<QueuedTask*> running_queue;
         std::list<QueuedTask*> waiting_queue;
         std::thread* pool = nullptr;
