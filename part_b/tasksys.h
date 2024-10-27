@@ -13,7 +13,7 @@ struct QueuedTask {
     IRunnable* runnable;
     int num_total_tasks;
     int tasks_queued;
-    int completed_tasks = 0;
+    std::atomic<int> completed_tasks;
     std::vector<int> deps;
     std::mutex m;
     bool finished = false;
@@ -89,15 +89,18 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         int num_threads;
         std::unordered_map<int, QueuedTask*> dependency_map;
         std::list<QueuedTask*> runnable_queue;
+        std::list<QueuedTask*> running_queue;
         std::list<QueuedTask*> waiting_queue;
         std::thread* pool = nullptr;
         std::thread* bookkeeper = nullptr;
         std::mutex waiting_mutex;
         std::mutex queue_mutex;
+        std::mutex end_m;
         std::condition_variable  task_graph_changed;
         std::condition_variable  task_available;
         std::condition_variable task_with_dependencies;
-
+        std::atomic<int> completed_runnables;
+        int queued_runnables = 0;
         std::atomic_bool pool_active;
 
 
