@@ -151,7 +151,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     std::atomic<int> tasks_completed(0);
     this->pool_active=true;
     if(!this->pool){
-        // std::cout << "Running " << my_task << std::endl;
 
         auto streaming = [&]() {
             while(this->pool_active){
@@ -160,10 +159,8 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
 
 
                     int my_task = num_total_tasks - task_queued;
-                    // std::cout << "Taking " << my_task << std::endl;
                     task_queued--;
                     m.unlock();
-                    // std::cout << "Running " << my_task << std::endl;
                     this->cur_runnable->runTask(my_task, num_total_tasks);
                     tasks_completed++;
                 }
@@ -183,7 +180,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
 
 
     while(true){
-        // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
         if(tasks_completed == num_total_tasks){
             break;
         }
@@ -213,56 +209,25 @@ const char* TaskSystemParallelThreadPoolSleeping::name() {
 }
 
 TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int num_threads): ITaskSystem(num_threads) {
-    //
-    // TODO: CS149 student implementations may decide to perform setup
-    // operations (such as thread pool construction) here.
-    // Implementations are free to add new class member variables
-    // (requiring changes to tasksys.h).
-    //
     this->num_threads = num_threads;
 
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
-    //
-    // TODO: CS149 student implementations may decide to perform cleanup
-    // operations (such as thread pool shutdown construction) here.
-    // Implementations are free to add new class member variables
-    // (requiring changes to tasksys.h).
-    //
-
-    //TODO!!! proper thread pool cleaning. Use is_pool_alive and ensure every thread released lock on mutex
-    // std::cout << "Destructor called" << std::endl;
     m.lock();
     this->pool_active = false;
     m.unlock();
     task_available.notify_all();
 
-    // std::cout << "Workers notified" << std::endl;
-
-
     for (int i = 0; i < this->num_threads; i++) {
             pool[i].join();
     }
-
-    // for (int i = 0; i < this->num_threads; i++) {
-    //         delete (pool +i);
-    // }
-
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
 
-
-    //
-    // TODO: CS149 students will modify the implementation of this
-    // method in Parts A and B.  The implementation provided below runs all
-    // tasks sequentially on the calling thread.
-    //
-
     std::atomic<int> tasks_completed(0);
     this->pool_active=true;
-    // std::cout << "fdsfds" << this->pool;
     task_queued = num_total_tasks;
     if(!this->pool){
 
@@ -272,67 +237,36 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
                 if(!this->pool_active){
                     return;
                 }
-                // std::cout << "threadId" << threadId << " Got lock " <<std::endl;
 
                 if (task_queued > 0 ){
                     int my_task = num_total_tasks - task_queued;
-                    // std::cout << "threadId" << threadId << " Running " << my_task << std::endl;
-
                     task_queued--;
-                    // std::cout << "threadId" << threadId << " task_queued is now " << task_queued <<std::endl;
-
-                    // std::cout << "threadId" << threadId << " Released lock " <<std::endl;
-
                     lck.unlock();
                     runnable->runTask(my_task, num_total_tasks);
-                    // std::cout << "threadId" << threadId << " Finished  " << my_task <<std::endl;
-
-                    // std::cout << "Finished " << my_task << std::endl;
                     tasks_completed++;
                 }
                 else {
-                    // if(tasks_completed == num_total_tasks){
-                    //     runnable_completed.notify_one();
-                    // }
-                    // std::cout << "threadId" << threadId << " No job. Sleeping " <<std::endl;
-                    // if(!this->pool_active){
-
-                    //     return;
-                    // }
                     task_available.wait_for( lck, std::chrono::seconds(2) );
-
-                    // task_available.wait(lck, std::);
-                //         if(!this->pool_active){
-                //     return;
-                // }
-                    // std::cout << "Oi mate " << threadId << " has been awaken " <<std::endl;
 
                 }
 
             }
-            // std::cout << "Oi mate " << threadId << " sees pool inactive " <<std::endl;
             return;
         };
         pool = new std::thread[num_threads];
 
         for (int i = 0; i < this->num_threads; i++) {
-            // std::cout << "Starting " << i << std::endl;
 
             pool[i] =  std::thread(streaming, i);
         }
     }
-    // std::unique_lock<std::mutex> lk_c(runnable_m);
     task_available.notify_all();
 
 
-    // m.unlock();
     while(true){
-        // std::cout << "Tasks completed " << tasks_completed << "Tasks to complete " << num_total_tasks << std::endl;
         if(tasks_completed == num_total_tasks){
-            // std::cout << "Done!" << std::endl;
             return;
         }
-        // runnable_completed.wait(lk_c);
 
     }
 
