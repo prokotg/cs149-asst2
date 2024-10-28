@@ -216,51 +216,51 @@ void TaskSystemParallelThreadPoolSleeping::keeper(){
                 }
 
                 // go over running tasks and see if any of it is finished
-                for (auto const& task : running_queue){
-                    if(task->completed_tasks == task->num_total_tasks){
-                        // std::cout << "Bulk id " << task->registered_id << " finished" << std::endl;
-                        task->finished = true;
+                std::list<QueuedTask*> local;
+                for (auto const& running_task : running_queue){
+                    if(running_task->completed_tasks == running_task->num_total_tasks){
+                        // std::cout << "Task " << running_task->registered_id << " finished" << std::endl;
+                        running_task->finished = true;
                         completed_runnables++;
                         task_graph_changed.notify_all();
+
+
+
+                        // find all tasks that wait for this 'running_task' to be finished
+                        const TaskID  running_id = running_task->registered_id;
+                        queue_mutex.lock();
+                        for(TaskID const dependent_id: dependency_map[running_id]){
+                            // inform that task with `running_id` has finished by erasing the id from the set of tasks id we wait on
+                            QueuedTask* dependent_task = register_map[dependent_id];
+                            dependent_task->deps.erase(running_id);
+                            // if after erasing, there are no other dependencies, we are good to put that on a runnable queue
+                            if(dependent_task->deps.empty()){
+                                for(int i =0; i <dependent_task->num_total_tasks; ++i){
+
+
+                                    RunnableChunk* rc = new RunnableChunk();
+                                    rc->runnable = dependent_task->runnable;
+                                    rc->num_total_tasks = dependent_task->num_total_tasks;
+                                    rc->task_id=i;
+                                    rc->bulk=dependent_task;
+                                    runnable_queue.push(rc);
+                                }
+                                local.push_back(dependent_task); // this cannotr be here!
+                            }
+                        }
+                        queue_mutex.unlock();
+                        task_available.notify_all();
+
+
+
+
+                        // std::cout << "Bulk id " << task->registered_id << " finished" << std::endl;
+
                     }
                 }
 
                 running_queue.remove_if([](QueuedTask* task){return task->finished;});
-
-
-                for (auto const& task : waiting_queue)
-                {
-                    bool ready_to_be_queued = true;
-                    for(TaskID const& dep: task->deps){
-                        if (dependency_map.count(dep)){
-                            if(!dependency_map[dep]->finished){
-                                ready_to_be_queued = false;
-                                // std::cout << "Task id "  << " needs " << dep << " to be finished" << std::endl;
-
-                                break;
-                            }
-                        }
-                    }
-                    if(ready_to_be_queued){
-                        // std::cout << "Task id "   << " ready to be queued!" << std::endl;
-                        task->queued = true;
-                        queue_mutex.lock();
-                        for(int i =0; i <task->num_total_tasks; ++i){
-                            RunnableChunk* rc = new RunnableChunk();
-                            rc->runnable = task->runnable;
-                            rc->num_total_tasks = task->num_total_tasks;
-                            rc->task_id=i;
-                            rc->bulk=task;
-                            runnable_queue.push(rc);
-
-                        }
-                        running_queue.push_back(task);
-                        queue_mutex.unlock();
-                        task_available.notify_all(); // ???
-
-                    }
-                }
-                waiting_queue.remove_if([](QueuedTask* task){return task->queued;});
+                running_queue.splice(running_queue.end(), local); //probably incorrect?
 
             }
 }
@@ -272,15 +272,15 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 
 
     std::unique_lock<std::mutex> waiting_lock(waiting_mutex);
-    TaskID registered_id = dependency_map.size();
+    TaskID registered_id = register_map.size();
     QueuedTask* new_record = new QueuedTask;
     new_record->runnable = runnable;
     new_record->num_total_tasks = num_total_tasks;
     new_record->tasks_queued = num_total_tasks;
-    new_record->deps = deps;
+    new_record->deps = std::set<int> (std::make_move_iterator(deps.begin()), std::make_move_iterator(deps.end()));
     new_record->completed_tasks = 0;
     new_record->registered_id = registered_id;
-    dependency_map[registered_id] = new_record;
+    register_map[registered_id] = new_record;
     if(deps.empty()){
     std::unique_lock<std::mutex> queue_lock(queue_mutex);
     running_queue.push_back(new_record);
@@ -297,7 +297,12 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     task_available.notify_all();
 
     } else {
-        waiting_queue.push_back(new_record);
+        // add information to the dependency map that when dependency finishes,
+        // we must call out on child to see if it can be run
+        for(TaskID const &dep: deps){
+            dependency_map[dep].insert(registered_id);
+        }
+        // waiting_queue.push_back(new_record);
     }
     waiting_lock.unlock();
     queued_runnables++;

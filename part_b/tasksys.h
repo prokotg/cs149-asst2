@@ -9,12 +9,13 @@
 #include <condition_variable>
 #include <atomic>
 #include <list>
+#include <set>
 struct QueuedTask {
     IRunnable* runnable;
     int num_total_tasks;
     int tasks_queued;
     std::atomic<int> completed_tasks;
-    std::vector<int> deps;
+    std::set<int> deps;
     std::mutex m;
     bool finished = false;
     bool queued = false;
@@ -97,7 +98,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         void worker(int threadId);
         void keeper();
         int num_threads;
-        std::unordered_map<int, QueuedTask*> dependency_map;
+        std::unordered_map<int, QueuedTask*> register_map;
+        std::unordered_map<int, std::set<int>> dependency_map;
         std::queue<RunnableChunk*> runnable_queue;
         std::list<QueuedTask*> running_queue;
         std::list<QueuedTask*> waiting_queue;
