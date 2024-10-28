@@ -281,9 +281,25 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     new_record->completed_tasks = 0;
     new_record->registered_id = registered_id;
     dependency_map[registered_id] = new_record;
-    waiting_queue.push_back(new_record);
+    if(deps.empty()){
+    std::unique_lock<std::mutex> queue_lock(queue_mutex);
+    running_queue.push_back(new_record);
+
+    for(int i =0; i <new_record->num_total_tasks; ++i){
+            RunnableChunk* rc = new RunnableChunk();
+            rc->runnable = new_record->runnable;
+            rc->num_total_tasks = new_record->num_total_tasks;
+            rc->task_id=i;
+            rc->bulk=new_record;
+            runnable_queue.push(rc);
+    }
+    queue_lock.unlock();
+    task_available.notify_all();
+
+    } else {
+        waiting_queue.push_back(new_record);
+    }
     waiting_lock.unlock();
-    task_with_dependencies.notify_all();
     queued_runnables++;
     return registered_id;
 
