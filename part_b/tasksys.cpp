@@ -132,10 +132,10 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     queued_runnables = 0;
     completed_runnables = 0;
 
-    pool = new std::thread[num_threads];
+    pool = new std::thread[num_threads-1];
 
 
-    for (int i = 0; i < this->num_threads; i++) {
+    for (int i = 0; i < this->num_threads-1; i++) {
         pool[i] =  std::thread(&TaskSystemParallelThreadPoolSleeping::worker, this, i);
     }
 
@@ -152,7 +152,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 
     this->pool_active = false;
     task_available.notify_all();
-    for (int i = 0; i < this->num_threads; i++) {
+    for (int i = 0; i < this->num_threads-1; i++) {
             // std::cout<< "Waiting for " << i << std::endl;
             pool[i].join();
     }
@@ -164,9 +164,10 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
 
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
-    }
+    const std::vector<TaskID> noDeps{};
+    runAsyncWithDeps(runnable, num_total_tasks, noDeps);
+    sync();
+
 
 
 }
@@ -174,12 +175,9 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
 void TaskSystemParallelThreadPoolSleeping::worker(int threadId){
 
     while(true){
-        // std::cout << "Running thread " << threadId  << std::endl;
-
 
         std::unique_lock<std::mutex> lck(queue_mutex);
         while(runnable_queue.empty() && this->pool_active){
-            // std::cout << "Sleeping thread " << threadId  << std::endl;
 
             task_available.wait(lck);
         }
@@ -190,9 +188,6 @@ void TaskSystemParallelThreadPoolSleeping::worker(int threadId){
         RunnableChunk * front_task = runnable_queue.front();
         runnable_queue.pop();
         lck.unlock();
-
-        // std::cout << "Executing bulk" << front_task->bulk->registered_id  << " task id " << front_task->task_id << std::endl;
-
         front_task->runnable->runTask(front_task->task_id, front_task->num_total_tasks);
         front_task->bulk->completed_tasks++;
 
@@ -206,19 +201,13 @@ void TaskSystemParallelThreadPoolSleeping::keeper(){
     while(true){
                 std::unique_lock<std::mutex> waiting_lock(waiting_mutex);
 
-                // while(waiting_queue.empty() && this->pool_active){
-                //     task_with_dependencies.wait(waiting_lock);
-                // }
-
                 if(!this->pool_active){
-                    // std::cout << "Keeper out!" << std::endl;
                     return;
                 }
 
                 // go over running tasks and see if any of it is finished
                 for (auto const& task : running_queue){
                     if(task->completed_tasks == task->num_total_tasks){
-                        // std::cout << "Bulk id " << task->registered_id << " finished" << std::endl;
                         task->finished = true;
                         completed_runnables++;
                         task_graph_changed.notify_all();
@@ -235,14 +224,12 @@ void TaskSystemParallelThreadPoolSleeping::keeper(){
                         if (dependency_map.count(dep)){
                             if(!dependency_map[dep]->finished){
                                 ready_to_be_queued = false;
-                                // std::cout << "Task id "  << " needs " << dep << " to be finished" << std::endl;
 
                                 break;
                             }
                         }
                     }
                     if(ready_to_be_queued){
-                        // std::cout << "Task id "   << " ready to be queued!" << std::endl;
                         task->queued = true;
                         queue_mutex.lock();
                         for(int i =0; i <task->num_total_tasks; ++i){
